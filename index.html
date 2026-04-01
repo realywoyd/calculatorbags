@@ -74,7 +74,7 @@ h1{margin:0;font-size:42px;line-height:1.05;font-weight:800;letter-spacing:-.03e
 </section>
 
 <script>
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxHIQzs8fmY_qpGXkSGL6WD0yACrtbuc8wfb_K9e_k_abdNd49VA9dAUUoEREEY7kAsew/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwgtmNShUeO1ofB7V9ubuUXfx9POh3VDLG_zh5CQA3_2DNdwDb6SzGwGPgEYAA91bkvQQ/exec';
 
 const APP = {
   sizes: [
@@ -82,30 +82,29 @@ const APP = {
     {id:'300x400',label:'300 × 400'},
     {id:'360x450',label:'360 × 450'},
     {id:'380x500',label:'380 × 500'},
+    {id:'390x500',label:'390 × 500'},
     {id:'450x500',label:'450 × 500'},
     {id:'600x500',label:'600 × 500'},
     {id:'700x500',label:'700 × 500'},
-    {id:'500x600',label:'500 × 600'},
-    {id:'700x600',label:'700 × 600'}
-  ],
-  colors: [
-    {id:'white',label:'Белый',hex:'#ffffff'},
-    {id:'transparent',label:'Прозрачный',hex:'transparent',transparent:true},
-    {id:'black',label:'Чёрный',hex:'#000000'},
-    {id:'darkblue',label:'Т-синий',hex:'#0016b8'},
-    {id:'lightblue',label:'Св.синий',hex:'#2020ff'},
-    {id:'blue',label:'Синий',hex:'#1f56ff'},
-    {id:'green',label:'Зелёный',hex:'#009b00'},
-    {id:'beige',label:'Бежевый',hex:'#f4d36c'},
-    {id:'red',label:'Красный',hex:'#ff1a0f'},
-    {id:'orange',label:'Оранжевый',hex:'#ff7f00'},
-    {id:'silver',label:'Серебро',hex:'#bebebe'},
-    {id:'burgundy',label:'Бордовый',hex:'#9b0000'},
-    {id:'yellow',label:'Жёлтый',hex:'#ffd400'}
   ],
   qty:[100,200,300,500,1000,2000,3000,5000],
   printColors:[1,2,3,4,5,6],
-  printSides:[1,2]
+  printSides:[1,2],
+  colorMeta:{
+    white:{label:'Белый',hex:'#ffffff'},
+    transparent:{label:'Прозрачный',hex:'transparent',transparent:true},
+    black:{label:'Чёрный',hex:'#000000'},
+    darkblue:{label:'Т-синий',hex:'#0016b8'},
+    lightblue:{label:'Св.синий',hex:'#2020ff'},
+    blue:{label:'Синий',hex:'#1f56ff'},
+    green:{label:'Зелёный',hex:'#009b00'},
+    beige:{label:'Бежевый',hex:'#f4d36c'},
+    red:{label:'Красный',hex:'#ff1a0f'},
+    orange:{label:'Оранжевый',hex:'#ff7f00'},
+    silver:{label:'Серебро',hex:'#bebebe'},
+    burgundy:{label:'Бордовый',hex:'#9b0000'},
+    yellow:{label:'Жёлтый',hex:'#ffd400'}
+  }
 };
 
 const money = v => new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 2}).format(Number(v || 0)) + ' руб.';
@@ -118,12 +117,7 @@ class Calc {
     this.isColorOpen = false;
     this.loaded = false;
     this.error = '';
-    this.data = {
-      unitPrices: {},
-      printPrices: {},
-      sizeGroups: {}
-    };
-
+    this.data = { rows: [], unitPrices: {}, printPrices: {}, totalPrices: {}, colorsBySize: {} };
     this.render();
 
     document.addEventListener('click', (e) => {
@@ -144,7 +138,7 @@ class Calc {
       const timer = setTimeout(() => {
         cleanup();
         reject(new Error('JSONP timeout'));
-      }, 12000);
+      }, 30000);
 
       function cleanup(){
         clearTimeout(timer);
@@ -168,24 +162,25 @@ class Calc {
   }
 
   async loadData(){
-    if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL === 'PASTE_YOUR_WEB_APP_URL_HERE') {
-      this.error = 'Не вставлен APPS_SCRIPT_URL.';
+    if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL === 'ВСТАВЬ_СЮДА_НОВЫЙ_EXEC_URL') {
+      this.error = 'Не вставлен APPS_SCRIPT_URL';
       this.render();
       return;
     }
 
     try {
       const json = await this.loadJsonp(APPS_SCRIPT_URL);
-      if (!json || !json.ok || !json.data) {
-        throw new Error('Apps Script вернул пустые данные');
-        if (!json.ok) throw new Error(json.error || 'Apps Script вернул ok:false');
-if (!json.data) throw new Error('Apps Script не вернул data');
-      }
+
+      if (!json) throw new Error('Apps Script ничего не вернул');
+      if (!json.ok) throw new Error(json.error || 'Apps Script вернул ok:false');
+      if (!json.data) throw new Error('Apps Script не вернул data');
 
       this.data = {
+        rows: json.data.rows || [],
         unitPrices: json.data.unitPrices || {},
         printPrices: json.data.printPrices || {},
-        sizeGroups: json.data.sizeGroups || {}
+        totalPrices: json.data.totalPrices || {},
+        colorsBySize: json.data.colorsBySize || {}
       };
 
       this.loaded = true;
@@ -200,22 +195,12 @@ if (!json.data) throw new Error('Apps Script не вернул data');
   }
 
   getAvailableColors(size){
-    const unitMap = size ? (this.data.unitPrices[size] || {}) : {};
-    return APP.colors.filter(i => Object.prototype.hasOwnProperty.call(unitMap, i.id));
-  }
-
-  getPrintMapForSize(size){
-    if (this.data.printPrices && this.data.printPrices[size]) {
-      return this.data.printPrices[size];
-    }
-
-
-    const grp = this.data.sizeGroups ? this.data.sizeGroups[size] : '';
-    if (grp && this.data.printPrices && this.data.printPrices[grp]) {
-      return this.data.printPrices[grp];
-    }
-
-    return {};
+    const obj = this.data.colorsBySize[size] || {};
+    return Object.keys(obj).map(color_id => ({
+      id: color_id,
+      label: obj[color_id] || (APP.colorMeta[color_id] ? APP.colorMeta[color_id].label : color_id),
+      ...(APP.colorMeta[color_id] || {})
+    }));
   }
 
   ensureValidState(){
@@ -230,21 +215,21 @@ if (!json.data) throw new Error('Apps Script не вернул data');
 
   colorUI(availableColors){
     if (!this.loaded) {
-      return `<div class="hint"></div>`;
+      return `<div class="hint">Загружаю цены из Google Sheets...</div>`;
     }
 
     if (!availableColors.length) {
-      return `<div class="hint warn"></div>`;
+      return ``;
     }
 
-    const current = APP.colors.find(x => x.id === this.s.color);
+    const current = availableColors.find(x => x.id === this.s.color);
 
-    return `<div class="dropdown" data-color-dropdown">
+    return `<div class="dropdown" data-color-dropdown>
       <button type="button" class="drop-btn ${this.isColorOpen ? 'open' : ''}" data-a="toggleColor">
         <span class="drop-value">
           ${
             current
-              ? `<span class="swatch ${current.id === 'white' ? 'white' : ''} ${current.transparent ? 'transparent' : ''}" style="${current.transparent ? '' : `--sw:${current.hex}`}"></span><span>${current.label}</span>`
+              ? `<span class="swatch ${current.id === 'white' ? 'white' : ''} ${current.transparent ? 'transparent' : ''}" style="${current.transparent ? '' : `--sw:${current.hex || '#ffffff'}`}"></span><span>${current.label}</span>`
               : '<span>Выберите цвет</span>'
           }
         </span>
@@ -255,7 +240,7 @@ if (!json.data) throw new Error('Apps Script не вернул data');
           ? `<div class="drop-menu">${
               availableColors.map(i =>
                 `<button type="button" class="drop-item ${this.s.color === i.id ? 'active' : ''}" data-a="color" data-v="${i.id}">
-                  <span class="swatch ${i.id === 'white' ? 'white' : ''} ${i.transparent ? 'transparent' : ''}" style="${i.transparent ? '' : `--sw:${i.hex}`}"></span>
+                  <span class="swatch ${i.id === 'white' ? 'white' : ''} ${i.transparent ? 'transparent' : ''}" style="${i.transparent ? '' : `--sw:${i.hex || '#ffffff'}`}"></span>
                   <span>${i.label}</span>
                 </button>`
               ).join('')
@@ -267,18 +252,33 @@ if (!json.data) throw new Error('Apps Script не вернул data');
 
   calc(){
     const s = this.s;
-    const unitMap = s.size ? (this.data.unitPrices[s.size] || {}) : {};
-    const availableColors = this.getAvailableColors(s.size);
-    const unitPrice = (s.size && s.color && this.loaded) ? Number(unitMap[s.color] || 0) : 0;
 
-    const printMap = this.loaded ? this.getPrintMapForSize(s.size) : {};
-    const qtyPrices = s.qty ? (printMap[String(s.qty)] || {}) : {};
-    const printBase = s.qty ? Number(qtyPrices[String(s.printColors)] || 0) : 0;
-    const printPrice = printBase * s.printSides;
-    const bagsPrice = unitPrice * (s.qty || 0);
-    const total = bagsPrice + printPrice;
+    const unitPrice = this.loaded
+      && this.data.unitPrices[s.size]
+      && this.data.unitPrices[s.size][s.color] != null
+        ? Number(this.data.unitPrices[s.size][s.color])
+        : 0;
 
-    return {availableColors, unitPrice, printBase, printPrice, bagsPrice, total};
+    const printPrice = this.loaded
+      && this.data.printPrices[s.size]
+      && this.data.printPrices[s.size][String(s.qty)]
+      && this.data.printPrices[s.size][String(s.qty)][String(s.printColors)] != null
+        ? Number(this.data.printPrices[s.size][String(s.qty)][String(s.printColors)])
+        : 0;
+
+    const totalFromTable = this.loaded
+      && this.data.totalPrices[s.size]
+      && this.data.totalPrices[s.size][s.color]
+      && this.data.totalPrices[s.size][s.color][String(s.qty)]
+      && this.data.totalPrices[s.size][s.color][String(s.qty)][String(s.printColors)] != null
+        ? Number(this.data.totalPrices[s.size][s.color][String(s.qty)][String(s.printColors)])
+        : 0;
+
+    const bagsPrice = unitPrice * s.qty;
+    const totalCalculated = bagsPrice + (printPrice * s.printSides);
+    const total = totalFromTable > 0 ? totalFromTable + (printPrice * (s.printSides - 1)) : totalCalculated;
+
+    return { unitPrice, printPrice, bagsPrice, total, totalFromTable };
   }
 
   render(){
@@ -286,9 +286,12 @@ if (!json.data) throw new Error('Apps Script не вернул data');
     const s = this.s;
     const c = this.calc();
     const size = APP.sizes.find(x => x.id === s.size);
-    const color = APP.colors.find(x => x.id === s.color);
+    const colors = this.getAvailableColors(s.size);
+    const color = colors.find(x => x.id === s.color);
+
     const missingBag = this.loaded && !c.unitPrice;
-    const missingPrint = this.loaded && !c.printBase;
+    const missingPrint = this.loaded && !c.printPrice;
+    const missingTotal = this.loaded && !c.totalFromTable;
 
     this.root.innerHTML = `<div class="panel">
       <div class="step">
@@ -300,7 +303,7 @@ if (!json.data) throw new Error('Apps Script не вернул data');
 
       <div class="step">
         <h3>Цвет пакета</h3>
-        ${this.colorUI(c.availableColors)}
+        ${this.colorUI(colors)}
       </div>
 
       <div class="step">
@@ -329,16 +332,14 @@ if (!json.data) throw new Error('Apps Script не вернул data');
           ${size ? `<div class="badge">${size.label}</div>` : ''}
           ${color ? `<div class="badge">${color.label}</div>` : ''}
           ${s.qty ? `<div class="badge">${n0(s.qty)} шт.</div>` : ''}
-          ${s.qty ? `<div class="badge">${s.printColors} цв. печати</div><div class="badge">${s.printSides === 1 ? '1 сторона' : '2 стороны'}</div>` : ''}
+          <div class="badge">${s.printColors} цв. печати</div>
+          <div class="badge">${s.printSides === 1 ? '1 сторона' : '2 стороны'}</div>
         </div>
-
-        ${missingBag ? '<div class="hint warn">' : ''}
-        ${missingPrint ? '<div class="hint warn"></div>' : ''}
+        ${missingBag ? '' : ''}
+        ${missingPrint ? '' : ''}
+        ${missingTotal ? '' : ''}
       </div>
 
-      <div class="card">
-        <h3>Расчёт стоимости</h3>
-      </div>
 
       <div class="card totalcard">
         <h3>Итоговая стоимость</h3>
